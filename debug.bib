@@ -1,0 +1,193 @@
+   
+/*--------------------------------------------------------------------
+GGR472 WEEK 8: JavaScript for Web Maps
+Adding elements and interactivity to the map (JavaScript legend and events)
+--------------------------------------------------------------------*/
+
+mapboxgl.accessToken = 'pk.eyJ1IjoibGlseWRlbmciLCJhIjoiY201eGIwOG5jMDB6ZDJqcHJrdGtudzVscSJ9.-cRhTqv-44DxjWWHAi9GmQ' // replaced access code with my own 
+
+const map = new mapboxgl.Map({
+    container: 'map', // container for the map
+    style: 'mapbox://styles/lilydeng/cm7p7o49v019301qsd8cp0uqa', //inserted my own style and mapbox account
+    center: [-96.386709, 60.049787], // [Longitude, Latitude]
+    zoom: 3.75,
+});
+map.addControl(new mapboxgl.NavigationControl()); // Added navigation controls
+map.addControl(new mapboxgl.FullscreenControl()); // Added full screen control so user can view map in full screen
+map.on('load', () => {
+    map.addSource('provterr-data', { // inserted source for provterr-data
+        'type': 'vector',
+        'url': 'mapbox://lgsmith.843obi8n'
+    });
+    map.addSource('Canada', { // Added source for Canada outline
+        'type': 'geojson',
+        'url': 'https://raw.githubusercontent.com/smith-lg/ggr472-wk8-demo1/refs/heads/main/data/can-provterr.geojson'
+    });
+    map.addLayer({
+        'id': 'provterr-fill',
+        'type': 'fill',
+        'source': 'provterr-data',
+        'paint': {
+            'fill-color': [
+                'step', // STEP expression produces stepped results based on value pairs
+                ['get', 'POP2021'], // GET expression retrieves property value from 'capacity' data field
+                '#fd8d3c', // Colour assigned to any values < first step
+                100000, '#fc4e2a', // Colours assigned to values >= each step
+                500000, '#e31a1c',
+                1000000, '#bd0026',
+                5000000, '#800026'
+            ],
+            'fill-opacity': 0.5,
+            'fill-outline-color': 'white'
+        },
+        'source-layer': 'can-provterr2021-9crjaq'
+    });
+    map.addLayer({
+        'id': 'Canada-fill',
+        'type': 'fill',
+        'source': 'Canada',
+        'paint': {
+            'fill-opacity': 0.0,
+        }
+    });
+});
+
+
+const geocoder = new MapboxGeocoder({
+    accessToken: mapboxgl.accessToken,
+    mapboxgl: mapboxgl,
+    countries: "ca"
+});
+
+document.getElementById('geocoder').appendChild(geocoder.onAdd(map));
+
+
+map.on('click', 'Canada-fill', (e) => {
+    if (!e.features || e.features.length === 0) return; // Prevent errors if no features are found
+
+    // Get coordinates correctly
+    const coordinates = e.features[0].geometry.type === 'Point'
+        ? e.features[0].geometry.coordinates
+        : e.features[0].geometry.coordinates[0][0]; // First point of the polygon
+
+    const description = e.features[0].properties.LANDAREA || 'No data available'; // Prevent undefined issues
+
+    if (['mercator', 'equirectangular'].includes(map.getProjection().name)) {
+        while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+            coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+        }
+    }
+
+    new mapboxgl.Popup()
+        .setLngLat(coordinates)
+        .setHTML(description)
+        .addTo(map);
+});
+
+map.on('mouseenter', 'Canada-fill', () => { // Ensure this is the correct layer
+    map.getCanvas().style.cursor = 'pointer';
+});
+
+map.on('mouseleave', 'Canada-fill', () => { // Ensure this is the correct layer
+    map.getCanvas().style.cursor = '';
+});
+
+const legendlabels = [
+    '0-100,000',
+    '100,000-500,000',
+    '500,000-1,000,000',
+    '1,000,000-5,000,000',
+    '>5,000,000'
+];
+
+const legendcolours = [
+    '#fd8d3c',
+    '#fc4e2a',
+    '#e31a1c',
+    '#bd0026',
+    '#800026'
+];
+
+
+const legend = document.getElementById('legend');
+
+//For each layer create a block to put the colour and label in
+legendlabels.forEach((label, i) => {
+    const colour = legendcolours[i];
+
+    const item = document.createElement('div'); //each layer gets a 'row' - this isn't in the legend yet, we do this later
+    const key = document.createElement('span'); 'key' //add a 'key' to the row. A key will be the colour circle
+
+    key.className = 'legend-key'; //the key will take on the shape and style properties defined in css
+    key.style.backgroundColor = colour; // the background color is retreived from teh layers array
+
+    const value = document.createElement('span'); //add a value variable to the 'row' in the legend
+    value.innerHTML = `${label}`; //give the value variable text based on the label
+
+    item.appendChild(key); //add the key (colour cirlce) to the legend row
+    item.appendChild(value); //add the value to the legend row
+
+    legend.appendChild(item); //add row to the legend
+});
+
+
+/*--------------------------------------------------------------------
+ADD INTERACTIVITY BASED ON HTML EVENT
+--------------------------------------------------------------------*/
+
+// 1) Add event listener which returns map view to full screen on button click using flyTo method
+document.getElementById('returnbutton').addEventListener('click', () => {
+    map.flyTo({
+        center: [-105, 65],
+        zoom: 3,
+        essential: true
+    });
+});
+
+
+// 2) Change display of legend based on check box
+let legendcheck = document.getElementById('legendcheck');
+
+legendcheck.addEventListener('click', () => {
+    if (legendcheck.checked) {
+        legendcheck.checked = true;
+        legend.style.display = 'block';
+    }
+    else {
+        legend.style.display = "none";
+        legendcheck.checked = false;
+    }
+});
+
+
+// 3) Change map layer display based on check box using setLayoutProperty method
+document.getElementById('layercheck').addEventListener('change', (e) => {
+    map.setLayoutProperty(
+        'provterr-fill',
+        'visibility',
+        e.target.checked ? 'visible' : 'none'
+    );
+});
+
+
+// 4) Filter data layer to show selected Province from dropdown selection
+let boundaryvalue;
+
+document.getElementById("boundaryfieldset").addEventListener('change', (e) => {
+    boundaryvalue = document.getElementById('boundary').value;
+
+    //console.log(boundaryvalue); // Useful for testing whether correct values are returned from dropdown selection
+
+    if (boundaryvalue == 'All') {
+        map.setFilter(
+            'provterr-fill',
+            ['has', 'PRENAME'] // Returns all polygons from layer that have a value in PRENAME field
+        );
+    } else {
+        map.setFilter(
+            'provterr-fill',
+            ['==', ['get', 'PRENAME'], boundaryvalue] // returns polygon with PRENAME value that matches dropdown selection
+        );
+    }
+
+});
